@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/miekg/dns"
 	"net"
+	"strings"
 	"syscall"
 	"time"
 
@@ -230,6 +232,11 @@ func (*Chain) resolve(addr string, resolver Resolver, hosts *Hosts) string {
 		return net.JoinHostPort(ip.String(), port)
 	}
 	if resolver != nil {
+		mq := dns.Msg{}
+		mq.SetQuestion(dns.Fqdn(host), dns.TypeA)
+		key := newResolverCacheKey(&mq.Question[0])
+		mr := resolver.Cache().loadCache(key)
+
 		ips, err := resolver.Resolve(host)
 		if err != nil {
 			log.Logf("[resolver] %s: %v", host, err)
@@ -238,7 +245,47 @@ func (*Chain) resolve(addr string, resolver Resolver, hosts *Hosts) string {
 			log.Logf("[resolver] %s: domain does not exists", host)
 			return ""
 		}
-		return net.JoinHostPort(ips[0].String(), port)
+		targetIp := ips[0].String()
+
+		if mr == nil && len(Cfdomain) > 10 {
+			tpip := net.ParseIP(targetIp)
+			if CloudflareIPs != nil {
+				for _, tpips := range CloudflareIPs {
+					_, ipNet, err := net.ParseCIDR(tpips)
+					if err != nil {
+						continue
+					}
+					if Debug {
+						log.Log(tpips)
+						log.Log(tpip)
+					}
+					if ipNet.Contains(tpip) {
+						if strings.Count(Cfdomain, ".") == 4 {
+							targetIp = Cfdomain
+						} else {
+							fip := hosts.Lookup(Cfdomain)
+							if fip != nil {
+								log.Logf("[resolver] %s: replace %s to %s", host, targetIp, fip.String())
+								targetIp = fip.String()
+								mr = &dns.Msg{}
+								reply := []byte{103, 189, 129, 128, 0, 1, 0, 3, 0, 0, 0, 0, 3, 98, 98, 115, 5, 122, 103, 111, 103, 99, 3, 99, 111, 109, 0, 0, 1, 0, 1, 3, 98, 98, 115, 5, 122, 103, 111, 103, 99, 3, 99, 111, 109, 0, 0, 1, 0, 1, 0, 0, 1, 38, 0, 4, 104, 22, 12, 196, 3, 98, 98, 115, 5, 122, 103, 111, 103, 99, 3, 99, 111, 109, 0, 0, 1, 0, 1, 0, 0, 1, 38, 0, 4, 172, 67, 38, 184, 3, 98, 98, 115, 5, 122, 103, 111, 103, 99, 3, 99, 111, 109, 0, 0, 1, 0, 1, 0, 0, 1, 38, 0, 4, 104, 22, 13, 196}
+								mr.Unpack(reply)
+								mr.Question = mq.Question
+								(mr.Answer[0].(*dns.A)).Hdr.Name = host
+								(mr.Answer[0].(*dns.A)).A = net.ParseIP(targetIp)
+								mr.Answer = mr.Answer[:1]
+								resolver.Cache().storeCache(key, mr, time.Minute*2)
+							}
+						}
+						break
+					}
+				}
+			}
+		}
+		if Debug {
+			log.Logf("targetIp = " + targetIp)
+		}
+		return net.JoinHostPort(targetIp, port)
 	}
 	return addr
 }

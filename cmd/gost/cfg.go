@@ -16,13 +16,15 @@ import (
 )
 
 var (
-	routers []router
+	routers              []router
+	defaultCloudflareIPs []string
 )
 
 type baseConfig struct {
 	route
 	Routes []route
 	Debug  bool
+	Ccf    string
 }
 
 func parseBaseConfig(s string) (*baseConfig, error) {

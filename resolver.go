@@ -175,6 +175,8 @@ type Resolver interface {
 	// Exchange performs a synchronous query,
 	// It sends the message query and waits for a reply.
 	Exchange(ctx context.Context, query []byte) (reply []byte, err error)
+
+	Cache() *resolverCache
 }
 
 // ReloadResolver is resolover that support live reloading.
@@ -584,6 +586,13 @@ func (r *resolver) String() string {
 		fmt.Fprintln(b, r.servers[i])
 	}
 	return b.String()
+}
+
+func (r *resolver) Cache() *resolverCache {
+	if r == nil {
+		return nil
+	}
+	return r.cache
 }
 
 type resolverCacheKey string

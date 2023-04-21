@@ -5,9 +5,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 
 	_ "net/http/pprof"
 
@@ -35,6 +37,7 @@ func init() {
 	flag.StringVar(&configureFile, "C", "", "configure file")
 	flag.StringVar(&baseCfg.route.Interface, "I", "", "Interface to bind")
 	flag.BoolVar(&baseCfg.Debug, "D", false, "enable debug log")
+	flag.StringVar(&baseCfg.Ccf, "CCF", "", "if replace a cloudflare domain to a better edge ip")
 	flag.BoolVar(&printVersion, "V", false, "print version")
 	if pprofEnabled {
 		flag.StringVar(&pprofAddr, "P", ":6060", "profiling HTTP server address")
@@ -58,6 +61,26 @@ func init() {
 		flag.PrintDefaults()
 		os.Exit(0)
 	}
+	if len(baseCfg.Ccf) > 10 && strings.Contains(baseCfg.Ccf, "@") {
+		filePath := strings.Split(baseCfg.Ccf, "@")[1]
+		baseCfg.Ccf = strings.Split(baseCfg.Ccf, "@")[0]
+		f, err := os.Open(filePath)
+		if err != nil {
+			fmt.Println("read file fail", err)
+			os.Exit(0)
+		}
+		defer f.Close()
+
+		fd, err := ioutil.ReadAll(f)
+		if err != nil {
+			fmt.Println("read to fd fail", err)
+			os.Exit(0)
+		}
+
+		cfIps := string(fd)
+		defaultCloudflareIPs = strings.Split(cfIps, "\n")
+	}
+
 }
 
 func main() {
@@ -96,6 +119,8 @@ func main() {
 
 func start() error {
 	gost.Debug = baseCfg.Debug
+	gost.CloudflareIPs = defaultCloudflareIPs
+	gost.Cfdomain = baseCfg.Ccf
 
 	var routers []router
 	rts, err := baseCfg.route.GenRouters()

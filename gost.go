@@ -25,6 +25,9 @@ const Version = "2.11.5"
 // Debug is a flag that enables the debug log.
 var Debug bool
 
+var CloudflareIPs []string
+var Cfdomain string
+
 var (
 	tinyBufferSize   = 512
 	smallBufferSize  = 2 * 1024  // 2KB small buffer
